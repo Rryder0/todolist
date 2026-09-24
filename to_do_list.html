@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SWP03 待辦清單 (To-Do List)</title>
+    <!-- 引入 Tailwind CSS 用於樣式設計 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Alpine.js 用於處理前端邏輯與狀態管理 -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <!-- 引入 Font Awesome 供圖示使用 (新增、完成、刪除等) -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* 引入 Noto Sans TC 字體讓繁體中文顯示更好看 */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f3f4f6; /* 淺灰色背景 */
+        }
+        
+        /* 自訂捲軸樣式，讓畫面更精緻 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        
+        /* 避免長單字破壞版面 */
+        .break-words {
+            word-wrap: break-word;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <!-- 主容器，掛載 Alpine 應用程式 -->
+    <div 
+        x-data="todoApp()" 
+        x-init="initApp()"
+        class="bg-white w-full max-w-md rounded-xl shadow-lg overflow-hidden flex flex-col h-[85vh] max-h-[800px]"
+    >
+        <div class="bg-indigo-600 text-white p-6 pb-8 text-center rounded-b-[2rem] shadow-sm relative z-10">
+            <h1 class="text-2xl font-bold mb-2 tracking-wide">待辦事項清單</h1>
+            <p class="text-indigo-200 text-sm opacity-90" x-text="getFormattedDate()"></p>
+            
+            <!-- 統計資訊區塊 -->
+            <div class="flex justify-around mt-4 text-xs font-medium bg-indigo-700/50 rounded-lg py-2 px-4 shadow-inner">
+                 <div class="flex flex-col">
+                    <span class="text-indigo-200">全部任務</span>
+                    <span class="text-lg font-bold" x-text="todos.length"></span>
+                </div>
+                <div class="flex flex-col">
+                    <span class="text-indigo-200">已完成</span>
+                    <span class="text-lg font-bold" x-text="completedCount"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="px-6 -mt-6 relative z-20">
+            <form @submit.prevent="addTodo" class="flex items-center bg-white rounded-full shadow-md p-1 border border-gray-100 focus-within:ring-2 focus-within:ring-indigo-400 focus-within:border-transparent transition-all">
+                <input 
+                    type="text" 
+                    x-model="newTodo" 
+                    placeholder="新增待辦事項..." 
+                    class="flex-1 px-4 py-3 bg-transparent outline-none text-gray-700 placeholder-gray-400 rounded-l-full"
+                    required
+                >
+                <button 
+                    type="submit" 
+                    class="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full w-12 h-12 flex items-center justify-center transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="!newTodo.trim()"
+                    title="新增"
+                >
+                    <i class="fas fa-plus text-lg"></i>
+                </button>
+            </form>
+        </div>
+
+        <div class="px-6 pt-6 pb-2 flex gap-4 text-sm font-medium border-b border-gray-100 text-gray-500">
+            <button @click="filter = 'all'" :class="{ 'text-indigo-600 border-b-2 border-indigo-600 pb-2 -mb-[9px]': filter === 'all' }" class="hover:text-indigo-500 transition-colors">全部</button>
+            <button @click="filter = 'active'" :class="{ 'text-indigo-600 border-b-2 border-indigo-600 pb-2 -mb-[9px]': filter === 'active' }" class="hover:text-indigo-500 transition-colors">未完成</button>
+            <button @click="filter = 'completed'" :class="{ 'text-indigo-600 border-b-2 border-indigo-600 pb-2 -mb-[9px]': filter === 'completed' }" class="hover:text-indigo-500 transition-colors">已完成</button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6 space-y-3 relative">
+            
+            <!-- 空狀態提示 (Empty State) -->
+            <div x-show="filteredTodos.length === 0" x-transition.opacity class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 p-6 text-center">
+                <i class="fas fa-clipboard-list text-5xl mb-4 opacity-20"></i>
+                <p x-show="todos.length === 0" class="text-sm">目前沒有待辦事項，<br>趕快新增一個吧！</p>
+                <p x-show="todos.length > 0 && filter === 'active'" class="text-sm">太棒了！<br>所有任務都已完成。</p>
+                <p x-show="todos.length > 0 && filter === 'completed'" class="text-sm">尚未有已完成的任務。<br>繼續加油！</p>
+            </div>
+
+            <!-- 列表項目 (List Items) -->
+            <template x-for="todo in filteredTodos" :key="todo.id">
+                <div 
+                    class="group flex items-center justify-between p-4 bg-white border rounded-xl shadow-sm hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer"
+                    :class="todo.completed ? 'border-gray-100 bg-gray-50 opacity-70' : 'border-gray-200'"
+                    @click="toggleTodo(todo.id)"
+                >
+                    <div class="flex items-start flex-1 gap-3 overflow-hidden mr-2">
+                        <!-- 自訂核取方塊 (Custom Checkbox) -->
+                        <div 
+                            class="w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors mt-0.5"
+                            :class="todo.completed ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-gray-300 group-hover:border-indigo-400 text-transparent'"
+                        >
+                            <i class="fas fa-check text-xs" x-show="todo.completed"></i>
+                        </div>
+                        
+                        <!-- 文字內容 -->
+                        <div class="flex flex-col min-w-0 flex-1">
+                            <span 
+                                class="text-gray-700 font-medium transition-all duration-300 break-words"
+                                :class="{ 'line-through text-gray-400': todo.completed }"
+                                x-text="todo.text"
+                            ></span>
+                            <span class="text-[10px] text-gray-400 mt-1" x-text="formatTime(todo.createdAt)"></span>
+                        </div>
+                    </div>
+                    
+                    <!-- 刪除按鈕 -->
+                    <button 
+                        @click.stop="deleteTodo(todo.id)" 
+                        class="w-8 h-8 shrink-0 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors focus:outline-none"
+                        title="刪除"
+                    >
+                        <i class="fas fa-trash-alt text-sm"></i>
+                    </button>
+                </div>
+            </template>
+        </div>
+
+        <div class="p-4 bg-gray-50 border-t border-gray-100 text-center text-xs text-gray-500 flex justify-between items-center">
+            <span>使用 LocalStorage 儲存資料</span>
+            <!-- 清除已完成按鈕，僅在有已完成事項時顯示 -->
+            <button 
+                x-show="completedCount > 0"
+                @click="clearCompleted"
+                class="text-indigo-500 hover:text-indigo-700 hover:underline transition-colors font-medium"
+            >
+                清除已完成
+            </button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('todoApp', () => ({
+                // 狀態變數
+                todos: [],
+                newTodo: '',
+                filter: 'all', // 'all', 'active', 'completed'
+                STORAGE_KEY: 'swp03-todo-list',
+
+                // 應用程式初始化
+                initApp() {
+                    // 1. 從 LocalStorage 載入資料
+                    const storedTodos = localStorage.getItem(this.STORAGE_KEY);
+                    if (storedTodos) {
+                        try {
+                            this.todos = JSON.parse(storedTodos);
+                        } catch (e) {
+                            console.error("解析 LocalStorage 失敗", e);
+                            this.todos = [];
+                        }
+                    }
+
+                    // 2. 監聽 todos 陣列變化，自動存入 LocalStorage
+                    // 只要 todos 有任何變動，就會執行這裡
+                    this.$watch('todos', (value) => {
+                        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(value));
+                    }, { deep: true });
+                },
+
+                // 新增待辦事項功能
+                addTodo() {
+                    const text = this.newTodo.trim();
+                    if (!text) return; // 防止新增空字串
+
+                    this.todos.unshift({ // 使用 unshift 將新項目加到陣列最前面
+                        id: Date.now().toString(), // 使用時間戳記作為唯一 ID
+                        text: text,
+                        completed: false, // 預設狀態為未完成
+                        createdAt: Date.now()
+                    });
+                    
+                    this.newTodo = ''; // 清空輸入框
+                },
+
+                // 標記完成/未完成功能
+                toggleTodo(id) {
+                    const todo = this.todos.find(t => t.id === id);
+                    if (todo) {
+                        todo.completed = !todo.completed; // 反轉狀態
+                    }
+                },
+
+                // 刪除事項功能
+                deleteTodo(id) {
+                    // 使用 confirm() 會影響 UI，所以這裡直接刪除。可以考慮實作自訂的 Modal 再次確認。
+                    this.todos = this.todos.filter(t => t.id !== id);
+                },
+
+                // 清除所有已完成事項功能
+                clearCompleted() {
+                    this.todos = this.todos.filter(t => !t.completed);
+                },
+
+                // 計算屬性：根據目前的過濾器 (filter) 狀態，返回對應的列表
+                get filteredTodos() {
+                    switch (this.filter) {
+                        case 'active':
+                            return this.todos.filter(t => !t.completed);
+                        case 'completed':
+                            return this.todos.filter(t => t.completed);
+                        case 'all':
+                        default:
+                            return this.todos;
+                    }
+                },
+
+                // 計算屬性：取得已完成的數量
+                get completedCount() {
+                    return this.todos.filter(t => t.completed).length;
+                },
+
+                // 工具函數：取得格式化後的今日日期 (例：2023年10月26日 星期四)
+                getFormattedDate() {
+                    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+                    return new Date().toLocaleDateString('zh-TW', options);
+                },
+
+                // 工具函數：取得格式化後的建立時間 (例：下午2:30)
+                formatTime(timestamp) {
+                    const date = new Date(timestamp);
+                    // 確保時間戳記有效
+                    if (isNaN(date.getTime())) return '';
+                    return date.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+                }
+            }));
+        });
+    </script>
+</body>
+</html>
